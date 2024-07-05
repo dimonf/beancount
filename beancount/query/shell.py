@@ -158,9 +158,19 @@ class DispatchingShell(cmd.Cmd):
         None if not necessary to wait).
         """
         if self.is_interactive:
-            return pager.ConditionalPager(
-                self.vars.get("pager", None), minlines=misc_utils.get_screen_height()
-            )
+            v_pager = self.vars.get('pager', None)
+            min_l = misc_utils.get_screen_height()
+            if not v_pager:
+                v_pager_app = None
+            else:
+                v_pager_app = v_pager.rstrip('!')
+                if v_pager_app != v_pager:
+                    #force pager, ignoring minlines limit
+                    min_l = 1
+                else:
+                    pass
+            return pager.ConditionalPager(v_pager_app,
+                                          minlines=min_l)
         else:
             file = (
                 codecs.getwriter("utf-8")(sys.stdout.buffer)
@@ -218,6 +228,10 @@ class DispatchingShell(cmd.Cmd):
                     print(
                         "Variable '{}' does not exist.".format(varname), file=self.outfile
                     )
+            elif len(components) % 2 == 0:
+                #multiple settings
+                for k,v in zip(components[::2], components[1::2]):
+                    self.do_set(f"{k} {v}")
             else:
                 print("Invalid number of arguments.", file=self.outfile)
 
@@ -451,14 +465,21 @@ class BQLShell(DispatchingShell):
                     dformat = self.options_map["dcontext"].build()
                     rtypes, rrows = numberify.numberify_results(rtypes, rrows, dformat)
 
-                query_render.render_csv(
-                    rtypes,
-                    rrows,
-                    self.options_map["dcontext"],
-                    self.outfile,
-                    expand=self.vars["expand"],
-                )
-
+                v_pager = self.vars.get('pager', None)
+                if self.outfile is sys.stdout and v_pager and  \
+                   v_pager.rstrip('!') != v_pager :
+                    with self.get_pager() as file:
+                        query_render.render_csv(rtypes, 
+                                                rrows,
+                                                self.options_map['dcontext'],
+                                                file,
+                                                expand=self.vars['expand'])
+                else:
+                    query_render.render_csv(rtypes, 
+                                            rrows,
+                                            self.options_map['dcontext'],
+                                            self.outfile,
+                                            expand=self.vars['expand'])
             else:
                 assert output_format not in _SUPPORTED_FORMATS
                 print(
